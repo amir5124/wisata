@@ -315,6 +315,25 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
     }
 });
 
+function formatToWhatsAppNumber(localNumber) {
+    if (typeof localNumber !== 'string') {
+        return null; // Pastikan input berupa string
+    }
+
+    const cleanNumber = localNumber.replace(/\D/g, ''); // Hapus karakter non-digit
+    if (cleanNumber.startsWith('0')) {
+        return `+62${cleanNumber.slice(1)}`;
+    }
+    if (cleanNumber.startsWith('62')) {
+        return `+${cleanNumber}`;
+    }
+    if (cleanNumber.startsWith('+62')) {
+        return `${cleanNumber}`;
+    }
+    return null; // Nomor tidak valid
+}
+
+
 async function sendWhatsAppMessage(to, variables) {
     try {
         const from = "whatsapp:+62882005447472"; // Nomor WhatsApp bisnis
@@ -332,7 +351,7 @@ async function sendWhatsAppMessage(to, variables) {
     }
 }
 
-// 🔹 Fungsi topup & kirim WA
+
 // Fungsi menambahkan saldo dan mengirim WhatsApp
 async function addBalance(partner_reff, va_code, serialnumber) {
     try {
