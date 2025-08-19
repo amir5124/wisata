@@ -333,20 +333,25 @@ async function sendWhatsAppMessage(to, variables) {
 }
 
 // 🔹 Fungsi topup & kirim WA
-async function addBalance(partnerReff, va_code, serialnumber) {
+// Fungsi menambahkan saldo dan mengirim WhatsApp
+async function addBalance(partner_reff, va_code, serialnumber) {
     try {
-        // cek data dari Firebase (bisa QRIS atau VA)
-        const path = va_code === "QRIS" ? `inquiry_qris/${partnerReff}` : `inquiry_va/${partnerReff}`;
+        // Tentukan path di Firebase (QRIS atau VA)
+        const path = va_code === "QRIS"
+            ? `inquiry_qris/${partner_reff}`
+            : `inquiry_va/${partner_reff}`;
+
+        // Ambil data dari Firebase
         const snap = await get(ref(databaseFire, path));
-        if (!snap.exists()) throw new Error(`Data ${partnerReff} tidak ditemukan di ${path}`);
+        if (!snap.exists()) throw new Error(`Data ${partner_reff} tidak ditemukan di ${path}`);
 
         const data = snap.val();
         const originalAmount = parseInt(data.amount);
 
-        // Nomor WA customer
+        // Nomor WhatsApp customer
         const recipientWhatsApp = formatToWhatsAppNumber(data.customer_phone);
 
-        // 🔹 Variabel template pesan WhatsApp (sesuaikan dengan template di Twilio)
+        // Variabel template pesan WhatsApp
         const variables = {
             "1": String(data.customer_name || "Tidak tersedia"),
             "2": String(data.partner_reff || "Tidak tersedia"),
@@ -358,11 +363,11 @@ async function addBalance(partnerReff, va_code, serialnumber) {
         // Kirim WhatsApp ke customer
         await sendWhatsAppMessage(recipientWhatsApp, variables);
 
-        // Buat catatan transaksi
+        // Catatan transaksi
         const formattedAmount = originalAmount.toLocaleString("id-ID");
         const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber}`;
 
-        // Contoh: request ke API kamu untuk update saldo
+        // Request ke API untuk update saldo
         const formdata = new FormData();
         formdata.append("amount", originalAmount);
         formdata.append("username", data.customer_name);
@@ -386,29 +391,26 @@ async function addBalance(partnerReff, va_code, serialnumber) {
             data: { ...data, catatan },
             balanceResult: response.data,
         };
+
     } catch (error) {
         console.error("❌ Gagal menambahkan saldo:", error.message);
         throw new Error("Gagal menambahkan saldo: " + error.message);
     }
 }
-// ✅ Route untuk menerima callback
+
+// Route callback
 app.post("/callback", async (req, res) => {
     try {
-        const {
-            partner_reff,
-            amount,
-            customer_name,
-            va_code,
-            serialnumber
-        } = req.body;
+        const { partner_reff, va_code, serialnumber } = req.body;
 
         console.log(`✅ Callback diterima: ${JSON.stringify(req.body)}`);
 
+        // Cek status transaksi sebelumnya
         let currentStatus;
         if (va_code === "QRIS") {
             currentStatus = await getCurrentStatusQris(partner_reff);
         } else {
-            currentStatus = await getCurrentStatusVa(partner_reff); // kalau VA masih MySQL
+            currentStatus = await getCurrentStatusVa(partner_reff);
         }
 
         if (currentStatus === "SUKSES") {
@@ -418,10 +420,10 @@ app.post("/callback", async (req, res) => {
             });
         }
 
-        // Jalankan fungsi penambahan saldo
-        await addBalance(amount, customer_name, va_code, serialnumber);
+        // Tambah saldo
+        await addBalance(partner_reff, va_code, serialnumber);
 
-        // Update status
+        // Update status transaksi di database
         if (va_code === "QRIS") {
             await updateInquiryStatusQris(partner_reff);
         } else {
