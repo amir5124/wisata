@@ -385,11 +385,12 @@ async function addBalance(partner_reff, va_code, serialnumber) {
         // Catatan transaksi
         const formattedAmount = originalAmount.toLocaleString("id-ID");
         const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber}`;
+        const username = "WisataByLinkU";
 
         // Request ke API untuk update saldo
         const formdata = new FormData();
         formdata.append("amount", originalAmount);
-        formdata.append("username", data.customer_name);
+        formdata.append("username", username);
         formdata.append("note", catatan);
 
         const config = {
