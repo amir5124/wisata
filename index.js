@@ -348,7 +348,7 @@ async function sendWhatsAppMessage(to, variables) {
         const response = await client.messages.create({
             from,
             to: `whatsapp:${to}`,
-            contentSid: "HX20213db8cfe7965b307a124f3260fa1e", // Template SID
+            contentSid: "HXebc8155c0e6bdcfd92f6513e304cfc4e", // Template SID
             contentVariables: JSON.stringify(variables),
         });
         console.log("✅ Pesan WhatsApp terkirim:", response.sid);
@@ -385,6 +385,12 @@ async function addBalance(partner_reff, va_code, serialnumber) {
             "3": `Rp${originalAmount.toLocaleString("id-ID")}`,
             "4": String(va_code),
             "5": String(serialnumber),
+
+            // tambahan dari body
+            "6": String(data.date || "2025-08-11"),
+            "7": String(data.name || "Tidak tersedia"),
+            "8": String(data.note || ""),
+            "9": String(data.pax || "1"),
         };
 
         // Kirim WhatsApp ke customer
@@ -392,7 +398,7 @@ async function addBalance(partner_reff, va_code, serialnumber) {
 
         // Catatan transaksi
         const formattedAmount = originalAmount.toLocaleString("id-ID");
-        const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber}`;
+        const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber} || Tanggal ${data.date || "2025-08-11"} || Nama ${data.name || "-"} || Note ${data.note || ""} || Pax ${data.pax || "1"}`;
         const username = "WisataByLinkU";
 
         // Request ke API untuk update saldo
