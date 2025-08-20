@@ -172,7 +172,11 @@ app.post('/create-va', async (req, res) => {
             va_number: result?.virtual_account || null,
             response_raw: result,
             created_at: new Date().toISOString(),
-            status: "PENDING"
+            status: "PENDING",
+            date: body.date || "2025-08-11",
+            name: body.name,
+            note: body.note || "",
+            pax: body.pax || "1"
         };
 
         // 💾 Simpan ke Firebase Realtime Database
@@ -250,7 +254,11 @@ app.post('/create-qris', async (req, res) => {
             qris_image_base64: qrisImageBuffer || null,
             response_raw: result,
             created_at: new Date().toISOString(),
-            status: "PENDING"
+            status: "PENDING",
+            date: body.date || "2025-08-11",
+            name: body.name,
+            note: body.note || "",
+            pax: body.pax || "1"
         };
 
         // 💾 Simpan ke Firebase Realtime Database
