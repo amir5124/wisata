@@ -389,7 +389,7 @@ async function addBalance(partner_reff, va_code, serialnumber) {
             // tambahan dari body
             "6": String(data.date || "2025-08-11"),
             "7": String(data.name || "Tidak tersedia"),
-            "8": String(data.note || ""),
+            "8": String(data.note || "tidak ada"),
             "9": String(data.pax || "1"),
         };
 
