@@ -399,7 +399,7 @@ async function addBalance(partner_reff, va_code, serialnumber) {
         // Catatan transaksi
         const formattedAmount = originalAmount.toLocaleString("id-ID");
         const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber} || Tanggal ${data.date || "2025-08-11"} || Nama ${data.name || "-"} || Note ${data.note || ""} || Pax ${data.pax || "1"}`;
-        const username = "WisataByLinkU";
+        const username = "Wisata";
 
         // Request ke API untuk update saldo
         const formdata = new FormData();
