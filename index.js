@@ -420,39 +420,34 @@ app.post("/callback", async (req, res) => {
     try {
         console.log(`📩 Callback masuk: ${partner_reff}`);
 
-        // 1. CEK STATUS TERLEBIH DAHULU
+        // 1. CEK STATUS DI FIREBASE
         let currentStatus = (va_code === "QRIS")
             ? await getCurrentStatusQris(partner_reff)
             : await getCurrentStatusVa(partner_reff);
 
-        // Jika status sudah SUKSES, segera stop proses.
         if (currentStatus === "SUKSES") {
-            console.log(`ℹ️ Duplikasi dicegah: ${partner_reff} sudah PAID.`);
-            return res.json({ message: "Transaksi sudah diproses sebelumnya." });
+            console.log(`ℹ️ Transaksi ${partner_reff} sudah PAID sebelumnya.`);
+            return res.json({ status: "SUCCESS", message: "Sudah diproses" });
         }
 
-        // 2. KUNCI STATUS DI AWAL (Paling Penting!)
-        // Kita ubah ke SUKSES sebelum menjalankan addBalance.
-        // Jika addBalance gagal, status sudah aman tidak akan terproses ganda.
+        // 2. UPDATE STATUS KE SUKSES DI FIREBASE (Locking)
         if (va_code === "QRIS") {
             await updateInquiryStatusQris(partner_reff);
         } else {
             await updateInquiryStatus(partner_reff);
         }
 
-        // 3. BARU JALANKAN PROSES SALDO & WA
+        // 3. TAMBAH SALDO & KIRIM WA
+        // Fungsi addBalance Anda sudah menggunakan databaseFire (Firebase)
         await addBalance(partner_reff, va_code, serialnumber);
 
-        // 4. Update Database MySQL lokal (jika ada)
-        await db.execute(`UPDATE order_service SET order_status = 'PAID' WHERE order_reff = ?`, [partner_reff]);
-
-        // Berikan respon sukses secepat mungkin ke Payment Gateway
-        return res.json({ status: "OK", message: "Callback processed successfully" });
+        // RESPON SUKSES (Agar polling frontend berhenti)
+        return res.json({ status: "SUCCESS", message: "Pembayaran berhasil dicatat" });
 
     } catch (err) {
         console.error(`❌ Callback Error: ${err.message}`);
-        // Jika error, gateway biasanya akan mencoba kirim ulang nanti
-        return res.status(500).json({ error: "Internal Server Error" });
+        // Kirim status 500 jika ada error teknis agar Gateway mencoba kirim ulang nanti
+        return res.status(500).json({ status: "ERROR", detail: err.message });
     }
 });
 
