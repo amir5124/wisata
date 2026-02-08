@@ -434,90 +434,56 @@ async function addBalance(partner_reff, va_code, serialnumber) {
 
 // Route callback
 app.post("/callback", async (req, res) => {
+    const { partner_reff, va_code, serialnumber } = req.body;
+
     try {
-        const { partner_reff, va_code, serialnumber } = req.body;
+        // 1. CEK DAN UPDATE LANGSUNG (Atomic operation jika bisa)
+        let currentStatus = (va_code === "QRIS")
+            ? await getCurrentStatusQris(partner_reff)
+            : await getCurrentStatusVa(partner_reff);
 
-        console.log(`✅ Callback diterima: ${JSON.stringify(req.body)}`);
+        if (currentStatus === "SUKSES" || currentStatus === "PROSES") {
+            return res.json({ message: "Transaksi sudah/sedang diproses." });
+        }
 
-        // Cek status transaksi sebelumnya
-        let currentStatus;
+        // 2. KUNCI STATUS DULU (Supaya callback lain yang masuk ditolak)
         if (va_code === "QRIS") {
-            currentStatus = await getCurrentStatusQris(partner_reff);
+            await updateStatusToProsesQris(partner_reff); // Buat fungsi baru untuk set status "PROSES"
         } else {
-            currentStatus = await getCurrentStatusVa(partner_reff);
+            await updateStatusToProsesVa(partner_reff);
         }
 
-        if (currentStatus === "SUKSES") {
-            console.log(`ℹ️ Transaksi ${partner_reff} sudah diproses sebelumnya.`);
-            return res.json({
-                message: "Transaksi sudah SUKSES sebelumnya. Tidak diproses ulang."
-            });
-        }
-
-        // Tambah saldo
+        // 3. BARU TAMBAH SALDO
         await addBalance(partner_reff, va_code, serialnumber);
 
-        // Update status transaksi di database
+        // 4. UPDATE KE SUKSES FINAL
         if (va_code === "QRIS") {
             await updateInquiryStatusQris(partner_reff);
         } else {
             await updateInquiryStatus(partner_reff);
         }
 
-        res.json({ message: "Callback diterima dan saldo ditambahkan" });
+        res.json({ message: "Callback berhasil diproses" });
 
     } catch (err) {
-        console.error(`❌ Gagal memproses callback: ${err.message}`);
-        res.status(500).json({
-            error: "Gagal memproses callback",
-            detail: err.message
-        });
+        // Jika gagal di tengah jalan, kembalikan status ke PENDING agar bisa dicoba lagi
+        // await rollbackStatus(partner_reff); 
+        res.status(500).json({ error: "Gagal" });
     }
 });
 
-// ✅ Ambil status inquiry_va dari Firebase
-async function getCurrentStatusVa(partnerReff) {
+app.get('/check-status/:partnerReff', async (req, res) => {
+    const partner_reff = req.params.partnerReff;
     try {
-        const snap = await get(ref(databaseFire, `inquiry_va/${partnerReff}/status`));
-        return snap.exists() ? snap.val() : null;
-    } catch (error) {
-        console.error(`❌ Gagal cek status inquiry_va: ${error.message}`);
-        throw error;
-    }
-}
-
-// ✅ Update status inquiry_va di Firebase
-async function updateInquiryStatus(partnerReff) {
-    try {
-        await update(ref(databaseFire, `inquiry_va/${partnerReff}`), { status: "SUKSES" });
-        console.log(`✅ Status inquiry_va untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
-    } catch (error) {
-        console.error(`❌ Gagal update status inquiry_va: ${error.message}`);
-        throw error;
-    }
-}
-
-// ✅ Ambil status inquiry_qris dari Firebase
-async function getCurrentStatusQris(partnerReff) {
-    try {
-        const snap = await get(ref(databaseFire, `inquiry_qris/${partnerReff}/status`));
-        return snap.exists() ? snap.val() : null;
-    } catch (error) {
-        console.error(`❌ Gagal cek status inquiry_qris: ${error.message}`);
-        throw error;
-    }
-}
-
-// ✅ Update status inquiry_qris di Firebase
-async function updateInquiryStatusQris(partnerReff) {
-    try {
-        await update(ref(databaseFire, `inquiry_qris/${partnerReff}`), { status: "SUKSES" });
-        console.log(`✅ Status inquiry_qris untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
-    } catch (error) {
-        console.error(`❌ Gagal update status inquiry_qris: ${error.message}`);
-        throw error;
-    }
-}
+        const response = await axios.get(`https://api.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
+            params: { username, partnerreff: partner_reff }, headers: { 'client-id': clientId, 'client-secret': clientSecret }
+        });
+        if (response.data.status_code === '00') {
+            await db.execute(`UPDATE order_service SET order_status = 'PAID' WHERE order_reff = ?`, [partner_reff]);
+        }
+        res.json(response.data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 
 
