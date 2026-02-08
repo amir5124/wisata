@@ -361,114 +361,98 @@ async function sendWhatsAppMessage(to, variables) {
 
 
 // Fungsi menambahkan saldo dan mengirim WhatsApp
+// ✅ Fungsi addBalance yang Robust
 async function addBalance(partner_reff, va_code, serialnumber) {
     try {
-        // Tentukan path di Firebase (QRIS atau VA)
-        const path = va_code === "QRIS"
-            ? `inquiry_qris/${partner_reff}`
-            : `inquiry_va/${partner_reff}`;
-
-        // Ambil data dari Firebase
+        const path = va_code === "QRIS" ? `inquiry_qris/${partner_reff}` : `inquiry_va/${partner_reff}`;
         const snap = await get(ref(databaseFire, path));
-        if (!snap.exists()) throw new Error(`Data ${partner_reff} tidak ditemukan di ${path}`);
 
+        if (!snap.exists()) throw new Error(`Data ${partner_reff} tidak ditemukan.`);
         const data = snap.val();
         const originalAmount = parseInt(data.amount);
 
-        // Nomor WhatsApp customer
-        const recipientWhatsApp = formatToWhatsAppNumber(data.customer_phone);
-
-        // Variabel template pesan WhatsApp
+        // 1. Kirim WA secara Asynchronous (Tidak ditunggu/await)
+        // Agar jika API WA lambat/error, saldo tetap terisi dan respon callback cepat.
         const variables = {
-            "1": String(data.customer_name || "Tidak tersedia"),
-            "2": String(data.partner_reff || "Tidak tersedia"),
+            "1": String(data.customer_name || "Pelanggan"),
+            "2": String(data.partner_reff || partner_reff),
             "3": `Rp${originalAmount.toLocaleString("id-ID")}`,
             "4": String(va_code),
             "5": String(serialnumber),
-
-            // tambahan dari body
-            "6": String(data.date || "2025-08-11"),
-            "7": String(data.name || "Tidak tersedia"),
-            "8": String(data.note || "tidak ada"),
+            "6": String(data.date || "2026-02-08"),
+            "7": String(data.name || "Paket Umroh"),
+            "8": String(data.note || "-"),
             "9": String(data.pax || "1"),
         };
 
-        // Kirim WhatsApp ke customer
-        await sendWhatsAppMessage(recipientWhatsApp, variables);
+        const recipientWhatsApp = formatToWhatsAppNumber(data.customer_phone);
+        sendWhatsAppMessage(recipientWhatsApp, variables).catch(err =>
+            console.error("⚠️ Background WA Error:", err.message)
+        );
 
-        // Catatan transaksi
-        const formattedAmount = originalAmount.toLocaleString("id-ID");
-        const catatan = `Transaksi ${va_code} sukses || Nominal Rp${formattedAmount} || Biller Reff ${serialnumber} || Tanggal ${data.date || "2025-08-11"} || Nama ${data.name || "-"} || Note ${data.note || ""} || Pax ${data.pax || "1"}`;
+        // 2. Proses Update Saldo ke API Linku
         const username = "Wisata";
+        const catatan = `Transaksi ${va_code} sukses || Reff ${serialnumber} || Pax ${data.pax || "1"}`;
 
-        // Request ke API untuk update saldo
         const formdata = new FormData();
         formdata.append("amount", originalAmount);
         formdata.append("username", username);
         formdata.append("note", catatan);
 
-        const config = {
-            method: "post",
-            url: "https://linku.co.id/qris.php",
-            headers: {
-                ...formdata.getHeaders(),
-            },
-            data: formdata,
-        };
+        const response = await axios.post("https://rtsindonesia.biz.id/qris.php", formdata, {
+            headers: formdata.getHeaders(),
+            timeout: 10000 // Timeout 10 detik agar tidak menggantung
+        });
 
-        const response = await axios(config);
         console.log("✅ Saldo berhasil ditambahkan:", response.data);
-
-        return {
-            status: true,
-            message: "Saldo berhasil ditambahkan & WA terkirim",
-            data: { ...data, catatan },
-            balanceResult: response.data,
-        };
+        return response.data;
 
     } catch (error) {
-        console.error("❌ Gagal menambahkan saldo:", error.message);
-        throw new Error("Gagal menambahkan saldo: " + error.message);
+        console.error("❌ Gagal di addBalance:", error.message);
+        throw error;
     }
 }
 
-// Route callback
+// ✅ Route Callback yang Fix (Idempotent)
 app.post("/callback", async (req, res) => {
     const { partner_reff, va_code, serialnumber } = req.body;
 
     try {
-        // 1. CEK DAN UPDATE LANGSUNG (Atomic operation jika bisa)
+        console.log(`📩 Callback masuk: ${partner_reff}`);
+
+        // 1. CEK STATUS TERLEBIH DAHULU
         let currentStatus = (va_code === "QRIS")
             ? await getCurrentStatusQris(partner_reff)
             : await getCurrentStatusVa(partner_reff);
 
-        if (currentStatus === "SUKSES" || currentStatus === "PROSES") {
-            return res.json({ message: "Transaksi sudah/sedang diproses." });
+        // Jika status sudah SUKSES, segera stop proses.
+        if (currentStatus === "SUKSES") {
+            console.log(`ℹ️ Duplikasi dicegah: ${partner_reff} sudah PAID.`);
+            return res.json({ message: "Transaksi sudah diproses sebelumnya." });
         }
 
-        // 2. KUNCI STATUS DULU (Supaya callback lain yang masuk ditolak)
-        if (va_code === "QRIS") {
-            await updateStatusToProsesQris(partner_reff); // Buat fungsi baru untuk set status "PROSES"
-        } else {
-            await updateStatusToProsesVa(partner_reff);
-        }
-
-        // 3. BARU TAMBAH SALDO
-        await addBalance(partner_reff, va_code, serialnumber);
-
-        // 4. UPDATE KE SUKSES FINAL
+        // 2. KUNCI STATUS DI AWAL (Paling Penting!)
+        // Kita ubah ke SUKSES sebelum menjalankan addBalance.
+        // Jika addBalance gagal, status sudah aman tidak akan terproses ganda.
         if (va_code === "QRIS") {
             await updateInquiryStatusQris(partner_reff);
         } else {
             await updateInquiryStatus(partner_reff);
         }
 
-        res.json({ message: "Callback berhasil diproses" });
+        // 3. BARU JALANKAN PROSES SALDO & WA
+        await addBalance(partner_reff, va_code, serialnumber);
+
+        // 4. Update Database MySQL lokal (jika ada)
+        await db.execute(`UPDATE order_service SET order_status = 'PAID' WHERE order_reff = ?`, [partner_reff]);
+
+        // Berikan respon sukses secepat mungkin ke Payment Gateway
+        return res.json({ status: "OK", message: "Callback processed successfully" });
 
     } catch (err) {
-        // Jika gagal di tengah jalan, kembalikan status ke PENDING agar bisa dicoba lagi
-        // await rollbackStatus(partner_reff); 
-        res.status(500).json({ error: "Gagal" });
+        console.error(`❌ Callback Error: ${err.message}`);
+        // Jika error, gateway biasanya akan mencoba kirim ulang nanti
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
@@ -484,6 +468,50 @@ app.get('/check-status/:partnerReff', async (req, res) => {
         res.json(response.data);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// ✅ Ambil status inquiry_va dari Firebase
+async function getCurrentStatusVa(partnerReff) {
+    try {
+        const snap = await get(ref(databaseFire, `inquiry_va/${partnerReff}/status`));
+        return snap.exists() ? snap.val() : null;
+    } catch (error) {
+        console.error(`❌ Gagal cek status inquiry_va: ${error.message}`);
+        throw error;
+    }
+}
+
+// ✅ Update status inquiry_va di Firebase
+async function updateInquiryStatus(partnerReff) {
+    try {
+        await update(ref(databaseFire, `inquiry_va/${partnerReff}`), { status: "SUKSES" });
+        console.log(`✅ Status inquiry_va untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
+    } catch (error) {
+        console.error(`❌ Gagal update status inquiry_va: ${error.message}`);
+        throw error;
+    }
+}
+
+// ✅ Ambil status inquiry_qris dari Firebase
+async function getCurrentStatusQris(partnerReff) {
+    try {
+        const snap = await get(ref(databaseFire, `inquiry_qris/${partnerReff}/status`));
+        return snap.exists() ? snap.val() : null;
+    } catch (error) {
+        console.error(`❌ Gagal cek status inquiry_qris: ${error.message}`);
+        throw error;
+    }
+}
+
+// ✅ Update status inquiry_qris di Firebase
+async function updateInquiryStatusQris(partnerReff) {
+    try {
+        await update(ref(databaseFire, `inquiry_qris/${partnerReff}`), { status: "SUKSES" });
+        console.log(`✅ Status inquiry_qris untuk ${partnerReff} berhasil diubah menjadi SUKSES`);
+    } catch (error) {
+        console.error(`❌ Gagal update status inquiry_qris: ${error.message}`);
+        throw error;
+    }
+}
 
 
 
