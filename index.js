@@ -418,35 +418,36 @@ app.post("/callback", async (req, res) => {
     const { partner_reff, va_code, serialnumber } = req.body;
 
     try {
-        console.log(`📩 Callback masuk: ${partner_reff}`);
+        const path = (va_code === "QRIS") ? `inquiry_qris/${partner_reff}` : `inquiry_va/${partner_reff}`;
+        const statusRef = ref(databaseFire, path);
 
-        // 1. CEK STATUS DI FIREBASE
-        let currentStatus = (va_code === "QRIS")
-            ? await getCurrentStatusQris(partner_reff)
-            : await getCurrentStatusVa(partner_reff);
+        // GUNAKAN TRANSACTION UNTUK LOCKING
+        const result = await runTransaction(statusRef, (currentData) => {
+            if (currentData) {
+                if (currentData.status === "SUKSES") {
+                    // Jika sudah sukses, batalkan transaksi (return nothing)
+                    return;
+                }
+                // Jika belum sukses, tandai sebagai sukses
+                currentData.status = "SUKSES";
+                return currentData;
+            }
+            return currentData;
+        });
 
-        if (currentStatus === "SUKSES") {
-            console.log(`ℹ️ Transaksi ${partner_reff} sudah PAID sebelumnya.`);
+        if (!result.committed) {
+            console.log(`ℹ️ Transaksi ${partner_reff} sudah diproses sebelumnya.`);
             return res.json({ status: "SUCCESS", message: "Sudah diproses" });
         }
 
-        // 2. UPDATE STATUS KE SUKSES DI FIREBASE (Locking)
-        if (va_code === "QRIS") {
-            await updateInquiryStatusQris(partner_reff);
-        } else {
-            await updateInquiryStatus(partner_reff);
-        }
-
-        // 3. TAMBAH SALDO & KIRIM WA
-        // Fungsi addBalance Anda sudah menggunakan databaseFire (Firebase)
+        // Jika sampai di sini, berarti kita "pemenang" race condition
+        // Sekarang aman untuk tambah saldo dan kirim WA
         await addBalance(partner_reff, va_code, serialnumber);
 
-        // RESPON SUKSES (Agar polling frontend berhenti)
         return res.json({ status: "SUCCESS", message: "Pembayaran berhasil dicatat" });
 
     } catch (err) {
         console.error(`❌ Callback Error: ${err.message}`);
-        // Kirim status 500 jika ada error teknis agar Gateway mencoba kirim ulang nanti
         return res.status(500).json({ status: "ERROR", detail: err.message });
     }
 });
