@@ -519,6 +519,51 @@ app.get('/check-status/:partnerReff', async (req, res) => {
 });
 
 // ============================================================
+// ✅ CEK STATUS DARI FIREBASE (bukan LinkQu)
+// ============================================================
+app.get('/check-local-status/:partnerReff', async (req, res) => {
+    const partner_reff = req.params.partnerReff;
+
+    try {
+        // Coba cek di inquiry_va dulu
+        let snap = await get(ref(databaseFire, `inquiry_va/${partner_reff}`));
+        let source = 'va';
+
+        // Kalau tidak ada, cek di inquiry_qris
+        if (!snap.exists()) {
+            snap = await get(ref(databaseFire, `inquiry_qris/${partner_reff}`));
+            source = 'qris';
+        }
+
+        if (!snap.exists()) {
+            return res.status(404).json({
+                success: false,
+                message: "Transaksi tidak ditemukan di database"
+            });
+        }
+
+        const data = snap.val();
+
+        return res.status(200).json({
+            success: true,
+            source,
+            partner_reff,
+            status: data.status,          // "PENDING" | "SUKSES"
+            customer_name: data.customer_name,
+            amount: data.amount,
+            va_number: data.va_number || null,
+            qris_url: data.qris_url || null,
+            created_at: data.created_at,
+            is_paid: data.status === "SUKSES"
+        });
+
+    } catch (err) {
+        console.error(`❌ Error check-local-status: ${err.message}`);
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ============================================================
 // ✅ HELPER STATUS INQUIRY
 // ============================================================
 async function getCurrentStatusVa(partnerReff) {
