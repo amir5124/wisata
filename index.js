@@ -161,7 +161,7 @@ app.post('/create-va', async (req, res) => {
             'client-secret': clientSecret
         };
 
-        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/va';
+        const url = 'https://gateway-dev.linkqu.id/linkqu-partner/transaction/create/va';
         const response = await axios.post(url, payload, { headers });
         const result = response.data;
 
@@ -233,7 +233,7 @@ app.post('/create-qris', async (req, res) => {
             'client-secret': clientSecret
         };
 
-        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/qris';
+        const url = 'https://gateway-dev.linkqu.id/linkqu-partner/transaction/create/qris';
         const response = await axios.post(url, payload, { headers });
 
         const result = response.data;
@@ -461,7 +461,7 @@ app.post("/callback", async (req, res) => {
 app.get('/check-status/:partnerReff', async (req, res) => {
     const partner_reff = req.params.partnerReff;
     try {
-        const response = await axios.get(`https://api.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
+        const response = await axios.get(`https://gateway-dev.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
             params: { username, partnerreff: partner_reff }, headers: { 'client-id': clientId, 'client-secret': clientSecret }
         });
         if (response.data.status_code === '00') {
