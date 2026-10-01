@@ -36,11 +36,17 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = twilio(accountSid, authToken);
 // 🔐 Konfigurasi kredensial
-const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
-const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
-const username = "LI9019VKS";
-const pin = "5m6uYAScSxQtCmU";
-const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
+// const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
+// const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
+// const username = "LI9019VKS";
+// const pin = "5m6uYAScSxQtCmU";
+// const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
+
+const clientId = "testing";
+const clientSecret = "123";
+const username = "LI307GXIN";
+const pin = "2K2NPCBBNNTovgB";
+const serverKey = "LinkQu@2020";
 
 // 📝 Fungsi untuk menulis log ke stderr.log
 function logToFile(message) {
