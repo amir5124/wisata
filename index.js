@@ -12,6 +12,9 @@ const {
     getDatabase, ref, query, orderByChild, equalTo, get, update, set, runTransaction
 } = require("firebase/database");
 
+// ============================================================
+// 🔥 FIREBASE CONFIG
+// ============================================================
 const firebaseConfig = {
     apiKey: "AIzaSyD8P9au26mC8xx8UcjNsm-NMW5JUgTHUBU",
     authDomain: "linku-3ca65.firebaseapp.com",
@@ -25,39 +28,72 @@ const firebaseConfig = {
 const FIREBASE = initializeApp(firebaseConfig);
 const databaseFire = getDatabase(FIREBASE);
 
+// ============================================================
+// ⚙️ EXPRESS SETUP
+// ============================================================
 const app = express();
 app.use(cors());
 app.use(express.json());
 require('dotenv').config();
 
+// ============================================================
+// 📱 TWILIO SETUP
+// ============================================================
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = twilio(accountSid, authToken);
 
-// 🔐 Konfigurasi kredensial LinkQu
+// ============================================================
+// 🔐 LINKQU CREDENTIALS
+// ============================================================
 const clientId = "testing";
 const clientSecret = "123";
 const username = "LI307GXIN";
 const pin = "2K2NPCBBNNTovgB";
 const serverKey = "LinkQu@2020";
 
-// 📱 Nomor WhatsApp Admin (notifikasi tambahan)
+// ============================================================
+// 📱 NOMOR WHATSAPP ADMIN
+// ============================================================
 const ADMIN_WHATSAPP = "+6281347423599";
+const TWILIO_WA_FROM = "whatsapp:+62882005447472";
+const TWILIO_CONTENT_SID = "HXebc8155c0e6bdcfd92f6513e304cfc4e";
 
-// 📝 Fungsi untuk menulis log ke stderr.log
+// ============================================================
+// 📝 LOGGER
+// ============================================================
 function logToFile(message) {
     const logPath = path.join(__dirname, 'stderr.log');
     const timestamp = new Date().toISOString();
     const fullMessage = `[${timestamp}] ${message}\n`;
 
     fs.appendFile(logPath, fullMessage, (err) => {
-        if (err) {
-            console.error("❌ Gagal menulis log:", err);
-        }
+        if (err) console.error("❌ Gagal menulis log:", err);
     });
 }
 
-// 🔄 Fungsi expired format YYYYMMDDHHmmss
+// ============================================================
+// 🛡️ SANITASI INPUT
+// ============================================================
+function sanitizeName(name) {
+    if (!name || typeof name !== 'string') return "Pelanggan";
+    const trimmed = name.trim();
+    // Buang placeholder {username} / {nama} / dll
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) return "Pelanggan";
+    if (trimmed === "" || trimmed.toLowerCase() === "username") return "Pelanggan";
+    return trimmed;
+}
+
+function sanitizePhone(phone) {
+    if (!phone || typeof phone !== 'string') return null;
+    const trimmed = phone.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) return null;
+    return trimmed;
+}
+
+// ============================================================
+// 🔄 TIMESTAMP HELPERS
+// ============================================================
 function getExpiredTimestamp(minutesFromNow = 15) {
     return moment.tz('Asia/Jakarta').add(minutesFromNow, 'minutes').format('YYYYMMDDHHmmss');
 }
@@ -68,53 +104,40 @@ const getFormatNow = () => {
     return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 };
 
-// 🔐 Fungsi membuat signature untuk request POST VA
+// ============================================================
+// 🔐 SIGNATURE GENERATORS
+// ============================================================
 function generateSignaturePOST({
-    amount,
-    expired,
-    bank_code,
-    partner_reff,
-    customer_id,
-    customer_name,
-    customer_email,
-    clientId,
-    serverKey
+    amount, expired, bank_code, partner_reff,
+    customer_id, customer_name, customer_email,
+    clientId, serverKey
 }) {
     const path = '/transaction/create/va';
     const method = 'POST';
-
     const rawValue = amount + expired + bank_code + partner_reff +
         customer_id + customer_name + customer_email + clientId;
     const cleaned = rawValue.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-
     const signToString = path + method + cleaned;
-
     return crypto.createHmac("sha256", serverKey).update(signToString).digest("hex");
 }
 
 function generateSignatureQRIS({
-    amount,
-    expired,
-    partner_reff,
-    customer_id,
-    customer_name,
-    customer_email,
-    clientId,
-    serverKey
+    amount, expired, partner_reff,
+    customer_id, customer_name, customer_email,
+    clientId, serverKey
 }) {
     const path = '/transaction/create/qris';
     const method = 'POST';
-
     const rawValue = amount + expired + partner_reff +
         customer_id + customer_name + customer_email + clientId;
     const cleaned = rawValue.replace(/[^0-9a-zA-Z]/g, "").toLowerCase();
-
     const signToString = path + method + cleaned;
-
     return crypto.createHmac("sha256", serverKey).update(signToString).digest("hex");
 }
 
-// 🧾 Fungsi membuat kode unik partner_reff
+// ============================================================
+// 🧾 PARTNER REFF GENERATOR
+// ============================================================
 function generatePartnerReff() {
     const prefix = 'INV-782372373627';
     const timestamp = Date.now();
@@ -123,7 +146,7 @@ function generatePartnerReff() {
 }
 
 // ============================================================
-// ✅ Endpoint POST untuk membuat VA
+// ✅ ENDPOINT: CREATE VA
 // ============================================================
 app.post('/create-va', async (req, res) => {
     try {
@@ -132,9 +155,9 @@ app.post('/create-va', async (req, res) => {
         const expired = getExpiredTimestamp();
         const url_callback = "https://wisata.siappgo.id/callback";
 
-        // Ambil customer_name & customer_phone dari body (frontend)
-        const customerName = body.customer_name || body.name || "Pelanggan";
-        const customerPhone = body.customer_phone || body.phone || null;
+        // ✅ Ambil customer_name & phone dari frontend (dengan sanitasi)
+        const customerName = sanitizeName(body.customer_name || body.name);
+        const customerPhone = sanitizePhone(body.customer_phone || body.phone);
         const customerEmail = body.customer_email || "bocahangon64@gmail.com";
         const customerId = body.customer_id || `CUST-${Date.now()}`;
 
@@ -172,7 +195,6 @@ app.post('/create-va', async (req, res) => {
         const response = await axios.post(url, payload, { headers });
         const result = response.data;
 
-        // 🔹 Data untuk Firebase
         const insertData = {
             partner_reff,
             customer_id: customerId,
@@ -192,9 +214,7 @@ app.post('/create-va', async (req, res) => {
             pax: body.pax || "1"
         };
 
-        // 💾 Simpan ke Firebase Realtime Database
         await set(ref(databaseFire, `inquiry_va/${partner_reff}`), insertData);
-
         res.json(result);
     } catch (err) {
         console.error('❌ Gagal membuat VA:', err.message);
@@ -206,7 +226,7 @@ app.post('/create-va', async (req, res) => {
 });
 
 // ============================================================
-// ✅ Endpoint POST untuk membuat QRIS
+// ✅ ENDPOINT: CREATE QRIS
 // ============================================================
 app.post('/create-qris', async (req, res) => {
     try {
@@ -215,9 +235,9 @@ app.post('/create-qris', async (req, res) => {
         const expired = getExpiredTimestamp();
         const url_callback = "https://wisata.siappgo.id/callback";
 
-        // Ambil customer_name & customer_phone dari body (frontend)
-        const customerName = body.customer_name || body.name || "Pelanggan";
-        const customerPhone = body.customer_phone || body.phone || null;
+        // ✅ Ambil customer_name & phone dari frontend
+        const customerName = sanitizeName(body.customer_name || body.name);
+        const customerPhone = sanitizePhone(body.customer_phone || body.phone);
         const customerEmail = body.customer_email || "bocahangon64@gmail.com";
         const customerId = body.customer_id || `CUST-${Date.now()}`;
 
@@ -284,9 +304,7 @@ app.post('/create-qris', async (req, res) => {
             pax: body.pax || "1"
         };
 
-        // 💾 Simpan ke Firebase Realtime Database
         await set(ref(databaseFire, `inquiry_qris/${partner_reff}`), insertData);
-
         res.json(result);
 
     } catch (err) {
@@ -298,6 +316,9 @@ app.post('/create-qris', async (req, res) => {
     }
 });
 
+// ============================================================
+// ✅ ENDPOINT: DOWNLOAD QRIS
+// ============================================================
 app.get('/download-qr/:partner_reff', async (req, res) => {
     const partner_reff = req.params.partner_reff;
 
@@ -341,36 +362,27 @@ app.get('/download-qr/:partner_reff', async (req, res) => {
 });
 
 // ============================================================
-// ✅ FORMAT NOMOR WHATSAPP
+// 📱 FORMAT NOMOR WHATSAPP
 // ============================================================
 function formatToWhatsAppNumber(localNumber) {
-    if (typeof localNumber !== 'string') {
-        return null;
-    }
+    if (typeof localNumber !== 'string') return null;
 
     const cleanNumber = localNumber.replace(/\D/g, '');
-    if (cleanNumber.startsWith('0')) {
-        return `+62${cleanNumber.slice(1)}`;
-    }
-    if (cleanNumber.startsWith('62')) {
-        return `+${cleanNumber}`;
-    }
-    if (cleanNumber.startsWith('+62')) {
-        return `${cleanNumber}`;
-    }
+    if (cleanNumber.startsWith('0')) return `+62${cleanNumber.slice(1)}`;
+    if (cleanNumber.startsWith('62')) return `+${cleanNumber}`;
+    if (cleanNumber.startsWith('+62')) return cleanNumber;
     return null;
 }
 
 // ============================================================
-// ✅ KIRIM WHATSAPP (Template Twilio)
+// 📤 KIRIM WHATSAPP
 // ============================================================
-async function sendWhatsAppMessage(to, variables, contentSid = "HXebc8155c0e6bdcfd92f6513e304cfc4e") {
+async function sendWhatsAppMessage(to, variables) {
     try {
-        const from = "whatsapp:+62882005447472";
         const response = await client.messages.create({
-            from,
+            from: TWILIO_WA_FROM,
             to: `whatsapp:${to}`,
-            contentSid: contentSid,
+            contentSid: TWILIO_CONTENT_SID,
             contentVariables: JSON.stringify(variables),
         });
         console.log(`✅ Pesan WhatsApp terkirim ke ${to}:`, response.sid);
@@ -382,32 +394,33 @@ async function sendWhatsAppMessage(to, variables, contentSid = "HXebc8155c0e6bdc
 }
 
 // ============================================================
-// ✅ FUNGSI ADD BALANCE (Termasuk kirim WA ke customer & admin)
+// ✅ ADD BALANCE — HANYA KIRIM WA (TANPA UPDATE SALDO LINKU)
 // ============================================================
 async function addBalance(partner_reff, va_code, serialnumber) {
     try {
-        const path = va_code === "QRIS" ? `inquiry_qris/${partner_reff}` : `inquiry_va/${partner_reff}`;
-        const snap = await get(ref(databaseFire, path));
+        const dbPath = va_code === "QRIS"
+            ? `inquiry_qris/${partner_reff}`
+            : `inquiry_va/${partner_reff}`;
+        const snap = await get(ref(databaseFire, dbPath));
 
         if (!snap.exists()) throw new Error(`Data ${partner_reff} tidak ditemukan.`);
         const data = snap.val();
         const originalAmount = parseInt(data.amount);
 
-        // ============================================================
-        // 1. Kirim WA ke CUSTOMER (background, tidak ditunggu)
-        // ============================================================
+        // ✅ Siapkan variabel untuk template WA
         const variables = {
-            "1": String(data.customer_name || "Pelanggan"),
+            "1": String(sanitizeName(data.customer_name)),
             "2": String(data.partner_reff || partner_reff),
             "3": `Rp${originalAmount.toLocaleString("id-ID")}`,
             "4": String(va_code),
             "5": String(serialnumber),
-            "6": String(data.date || "2026-02-08"),
-            "7": String(data.name || "Paket Umroh"),
+            "6": String(data.date || "-"),
+            "7": String(data.name || "OPEN TRIP IKN"),
             "8": String(data.note || "-"),
             "9": String(data.pax || "1"),
         };
 
+        // 1️⃣ Kirim WA ke CUSTOMER (background)
         const recipientWhatsApp = formatToWhatsAppNumber(data.customer_phone);
         if (recipientWhatsApp) {
             sendWhatsAppMessage(recipientWhatsApp, variables).catch(err =>
@@ -417,43 +430,13 @@ async function addBalance(partner_reff, va_code, serialnumber) {
             console.warn(`⚠️ Nomor customer tidak valid: ${data.customer_phone}`);
         }
 
-        // ============================================================
-        // 2. Kirim WA ke ADMIN (notifikasi tambahan)
-        // ============================================================
-        const adminVariables = {
-            "1": String(data.customer_name || "Pelanggan"),
-            "2": String(data.partner_reff || partner_reff),
-            "3": `Rp${originalAmount.toLocaleString("id-ID")}`,
-            "4": String(va_code),
-            "5": String(serialnumber),
-            "6": String(data.date || "2026-02-08"),
-            "7": String(data.name || "Paket Umroh"),
-            "8": String(data.note || "-"),
-            "9": String(data.pax || "1"),
-        };
-
-        sendWhatsAppMessage(ADMIN_WHATSAPP, adminVariables).catch(err =>
+        // 2️⃣ Kirim WA ke ADMIN (background)
+        sendWhatsAppMessage(ADMIN_WHATSAPP, variables).catch(err =>
             console.error("⚠️ Background WA Admin Error:", err.message)
         );
 
-        // ============================================================
-        // 3. Proses Update Saldo ke API Linku
-        // ============================================================
-        const username = "Wisata";
-        const catatan = `Transaksi ${va_code} sukses || Reff ${serialnumber} || Pax ${data.pax || "1"}`;
-
-        const formdata = new FormData();
-        formdata.append("amount", originalAmount);
-        formdata.append("username", username);
-        formdata.append("note", catatan);
-
-        const response = await axios.post("https://rtsindonesia.biz.id/qris.php", formdata, {
-            headers: formdata.getHeaders(),
-            timeout: 10000
-        });
-
-        console.log("✅ Saldo berhasil ditambahkan:", response.data);
-        return response.data;
+        console.log("✅ Notifikasi WhatsApp selesai diproses.");
+        return { status: true };
 
     } catch (error) {
         console.error("❌ Gagal di addBalance:", error.message);
@@ -462,19 +445,22 @@ async function addBalance(partner_reff, va_code, serialnumber) {
 }
 
 // ============================================================
-// ✅ ROUTE CALLBACK (Idempotent)
+// ✅ CALLBACK — WAJIB SUKSES, addBalance di BACKGROUND
 // ============================================================
 app.post("/callback", async (req, res) => {
     const { partner_reff, va_code, serialnumber } = req.body;
 
     try {
-        const path = (va_code === "QRIS") ? `inquiry_qris/${partner_reff}` : `inquiry_va/${partner_reff}`;
-        const statusRef = ref(databaseFire, path);
+        const dbPath = (va_code === "QRIS")
+            ? `inquiry_qris/${partner_reff}`
+            : `inquiry_va/${partner_reff}`;
+        const statusRef = ref(databaseFire, dbPath);
 
+        // 🔒 TRANSACTION untuk locking (hindari race condition)
         const result = await runTransaction(statusRef, (currentData) => {
             if (currentData) {
                 if (currentData.status === "SUKSES") {
-                    return;
+                    return; // sudah sukses → batalkan
                 }
                 currentData.status = "SUKSES";
                 return currentData;
@@ -482,18 +468,34 @@ app.post("/callback", async (req, res) => {
             return currentData;
         });
 
+        // ✅ Kalau sudah pernah diproses → tetap response 200
         if (!result.committed) {
             console.log(`ℹ️ Transaksi ${partner_reff} sudah diproses sebelumnya.`);
-            return res.json({ status: "SUCCESS", message: "Sudah diproses" });
+            return res.status(200).json({ status: "SUCCESS", message: "Sudah diproses" });
         }
 
-        await addBalance(partner_reff, va_code, serialnumber);
+        console.log(`✅ Transaksi ${partner_reff} berhasil ditandai SUKSES.`);
 
-        return res.json({ status: "SUCCESS", message: "Pembayaran berhasil dicatat" });
+        // 🔥 FIRE-AND-FORGET: addBalance di background (TIDAK di-await)
+        // Callback langsung sukses walau WA lambat
+        addBalance(partner_reff, va_code, serialnumber).catch(err =>
+            console.error("⚠️ Background addBalance Error:", err.message)
+        );
+
+        // ✅ RESPONSE WAJIB 200 ke Linku
+        return res.status(200).json({
+            status: "SUCCESS",
+            message: "Pembayaran berhasil dicatat"
+        });
 
     } catch (err) {
         console.error(`❌ Callback Error: ${err.message}`);
-        return res.status(500).json({ status: "ERROR", detail: err.message });
+
+        // ⚠️ Tetap balas 200 agar Linku tidak retry berkali-kali
+        return res.status(200).json({
+            status: "SUCCESS",
+            message: "Callback diterima"
+        });
     }
 });
 
@@ -503,10 +505,13 @@ app.post("/callback", async (req, res) => {
 app.get('/check-status/:partnerReff', async (req, res) => {
     const partner_reff = req.params.partnerReff;
     try {
-        const response = await axios.get(`https://gateway-dev.linkqu.id/linkqu-partner/transaction/payment/checkstatus`, {
-            params: { username, partnerreff: partner_reff },
-            headers: { 'client-id': clientId, 'client-secret': clientSecret }
-        });
+        const response = await axios.get(
+            `https://gateway-dev.linkqu.id/linkqu-partner/transaction/payment/checkstatus`,
+            {
+                params: { username, partnerreff: partner_reff },
+                headers: { 'client-id': clientId, 'client-secret': clientSecret }
+            }
+        );
         res.json(response.data);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -514,7 +519,7 @@ app.get('/check-status/:partnerReff', async (req, res) => {
 });
 
 // ============================================================
-// ✅ Helper status inquiry
+// ✅ HELPER STATUS INQUIRY
 // ============================================================
 async function getCurrentStatusVa(partnerReff) {
     try {
@@ -557,7 +562,7 @@ async function updateInquiryStatusQris(partnerReff) {
 }
 
 // ============================================================
-// ✅ LIST VA & QR (dari Firebase)
+// ✅ LIST VA (dari Firebase)
 // ============================================================
 app.get('/va-list', async (req, res) => {
     const { username } = req.query;
@@ -567,9 +572,7 @@ app.get('/va-list', async (req, res) => {
 
     try {
         const snap = await get(ref(databaseFire, 'inquiry_va'));
-        if (!snap.exists()) {
-            return res.json([]);
-        }
+        if (!snap.exists()) return res.json([]);
 
         const all = snap.val();
         const now = Date.now();
@@ -607,6 +610,9 @@ app.get('/va-list', async (req, res) => {
     }
 });
 
+// ============================================================
+// ✅ LIST QRIS (dari Firebase)
+// ============================================================
 app.get('/qr-list', async (req, res) => {
     const { username } = req.query;
     if (!username) {
@@ -615,9 +621,7 @@ app.get('/qr-list', async (req, res) => {
 
     try {
         const snap = await get(ref(databaseFire, 'inquiry_qris'));
-        if (!snap.exists()) {
-            return res.json([]);
-        }
+        if (!snap.exists()) return res.json([]);
 
         const all = snap.val();
         const now = Date.now();
@@ -655,10 +659,11 @@ app.get('/qr-list', async (req, res) => {
 });
 
 // ============================================================
-// ✅ START SERVER
+// 🚀 START SERVER
 // ============================================================
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Server berjalan di http://localhost:${PORT}`);
-    console.log(`📱 Notifikasi WhatsApp admin akan dikirim ke: ${ADMIN_WHATSAPP}`);
+    console.log(`📱 Notifikasi WhatsApp customer + admin (${ADMIN_WHATSAPP})`);
+    console.log(`✅ Callback mode: FIRE-AND-FORGET (anti timeout)`);
 });
