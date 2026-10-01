@@ -46,11 +46,17 @@ const client = twilio(accountSid, authToken);
 // ============================================================
 // 🔐 LINKQU CREDENTIALS
 // ============================================================
-const clientId = "testing";
-const clientSecret = "123";
-const username = "LI307GXIN";
-const pin = "2K2NPCBBNNTovgB";
-const serverKey = "LinkQu@2020";
+// const clientId = "testing";
+// const clientSecret = "123";
+// const username = "LI307GXIN";
+// const pin = "2K2NPCBBNNTovgB";
+// const serverKey = "LinkQu@2020";
+
+const clientId = "5f5aa496-7e16-4ca1-9967-33c768dac6c7";
+const clientSecret = "TM1rVhfaFm5YJxKruHo0nWMWC";
+const username = "LI9019VKS";
+const pin = "5m6uYAScSxQtCmU";
+const serverKey = "QtwGEr997XDcmMb1Pq8S5X1N";
 
 // ============================================================
 // 📱 NOMOR WHATSAPP ADMIN
@@ -191,7 +197,7 @@ app.post('/create-va', async (req, res) => {
             'client-secret': clientSecret
         };
 
-        const url = 'https://gateway-dev.linkqu.id/linkqu-partner/transaction/create/va';
+        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/va';
         const response = await axios.post(url, payload, { headers });
         const result = response.data;
 
@@ -270,7 +276,7 @@ app.post('/create-qris', async (req, res) => {
             'client-secret': clientSecret
         };
 
-        const url = 'https://gateway-dev.linkqu.id/linkqu-partner/transaction/create/qris';
+        const url = 'https://api.linkqu.id/linkqu-partner/transaction/create/qris';
         const response = await axios.post(url, payload, { headers });
 
         const result = response.data;
@@ -506,7 +512,7 @@ app.get('/check-status/:partnerReff', async (req, res) => {
     const partner_reff = req.params.partnerReff;
     try {
         const response = await axios.get(
-            `https://gateway-dev.linkqu.id/linkqu-partner/transaction/payment/checkstatus`,
+            `https://api.linkqu.id/linkqu-partner/transaction/payment/checkstatus`,
             {
                 params: { username, partnerreff: partner_reff },
                 headers: { 'client-id': clientId, 'client-secret': clientSecret }
